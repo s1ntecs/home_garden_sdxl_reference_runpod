@@ -107,12 +107,13 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
         control_image = midas(image_pil)
+        
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            # image=control_image,
+            image=image_pil,
             ip_adapter_image=image_pil,
             control_image=control_image,
             controlnet_conditioning_scale=depth_scale,
