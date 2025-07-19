@@ -37,11 +37,14 @@ def pil_to_b64(img: Image.Image) -> str:
 
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
+# controlnet = ControlNetModel.from_pretrained(
+#                 "diffusers/controlnet-zoe-depth-sdxl-1.0",
+#                 torch_dtype=DTYPE
+#             )
 controlnet = ControlNetModel.from_pretrained(
-                "diffusers/controlnet-zoe-depth-sdxl-1.0",
-                torch_dtype=DTYPE
-            )
-
+        "diffusers/controlnet-depth-sdxl-1.0-small",
+        torch_dtype=torch.float16
+    )
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",

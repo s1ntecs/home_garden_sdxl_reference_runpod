@@ -40,26 +40,28 @@ def fetch_checkpoints() -> None:
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
     controlnet = ControlNetModel.from_pretrained(
-            "diffusers/controlnet-zoe-depth-sdxl-1.0",
-            torch_dtype=DTYPE
-        )
+        "diffusers/controlnet-depth-sdxl-1.0-small",
+        torch_dtype=torch.float16
+    )
+    print("LOADED CONTROLNET")
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
-
+    print("LOADED VAE")
     PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
         # "RunDiffusion/Juggernaut-XL-v9",
-        # "SG161222/RealVisXL_V5.0",
-        "misri/cyberrealisticPony_v90Alt1",
+        "SG161222/RealVisXL_V5.0",
+        # "misri/cyberrealisticPony_v90Alt1",
         # "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
         torch_dtype=DTYPE,
         add_watermarker=False,
         controlnet=controlnet,
         vae=vae,
-        # variant="fp16",
+        variant="fp16",
         use_safetensors=True,
         resume_download=True,
-    ).to(DEVICE)
+    )
+    print("LOADED PIPELINE")
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
     PIPELINE.load_ip_adapter(
@@ -67,11 +69,13 @@ def get_pipeline():
         subfolder="sdxl_models",
         weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
     )
+    print("LOADED IP ADAPTER")
     zoe_depth = ZoeDetector.from_pretrained(
         "valhalla/t2iadapter-aux-models",
         filename="zoed_nk.pth",
         model_type="zoedepth_nk"
-    ).to(DEVICE)
+    )
+    print("LOADED IP ZOE DETECTOR")
 
     return
 
