@@ -1,14 +1,17 @@
-import cv2
 import base64, io, random, time, numpy as np, torch
 from typing import Any, Dict
 from PIL import Image
+
+from transformers import CLIPVisionModelWithProjection
 
 from diffusers import (
     StableDiffusionXLControlNetPipeline,
     ControlNetModel, UniPCMultistepScheduler,
     DPMSolverMultistepScheduler
 )
+
 from controlnet_aux import MidasDetector
+
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -66,8 +69,13 @@ PIPELINE.scheduler = DPMSolverMultistepScheduler.from_config(
     solver_order=2,
     lower_order_final=True
 )
+PIPELINE.image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+    "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
+    torch_dtype=torch.float16,
+).to(DEVICE)
 PIPELINE.enable_xformers_memory_efficient_attention()
 PIPELINE.to(DEVICE)
+
 PIPELINE.load_ip_adapter(
     "h94/IP-Adapter",
     subfolder="sdxl_models",
@@ -86,6 +94,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         image_url = payload.get("image_url")
         if not image_url:
             return {"error": "'image_url' is required"}
+        reference_url = payload.get("reference_url")
+        if not reference_url:
+            return {"error": "'reference_url' is required"}
 
         prompt = payload.get("prompt")
         if not prompt:
@@ -105,16 +116,16 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)
+        reference_pil = url_to_pil(reference_url)
         orig_w, orig_h = image_pil.size
         control_image = midas(image_pil)
-        
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
             image=image_pil,
-            ip_adapter_image=image_pil,
+            ip_adapter_image=reference_pil,
             control_image=control_image,
             controlnet_conditioning_scale=depth_scale,
             ip_adapter_scale=ip_adapter_scale,
