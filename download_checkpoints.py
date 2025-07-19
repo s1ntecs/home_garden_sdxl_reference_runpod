@@ -8,7 +8,7 @@ from diffusers import (
     AutoencoderKL
 )
 
-from controlnet_aux import ZoeDetector
+from controlnet_aux import MidasDetector
 
 
 # from huggingface_hub import hf_hub_download
@@ -40,8 +40,9 @@ def fetch_checkpoints() -> None:
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
     controlnet = ControlNetModel.from_pretrained(
-        "diffusers/controlnet-zoe-depth-sdxl-1.0",
-        torch_dtype=DTYPE
+        "diffusers/controlnet-depth-sdxl-1.0",
+        torch_dtype=DTYPE,
+        use_safetensors=True
     )
     print("LOADED CONTROLNET")
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
@@ -70,13 +71,7 @@ def get_pipeline():
         weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
     )
     print("LOADED IP ADAPTER")
-    zoe_depth = ZoeDetector.from_pretrained(
-        "valhalla/t2iadapter-aux-models",
-        filename="zoed_nk.pth",
-        model_type="zoedepth_nk"
-    )
-    print("LOADED IP ZOE DETECTOR")
-
+    MidasDetector.from_pretrained("lllyasviel/ControlNet")
     return
 
 

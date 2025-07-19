@@ -8,7 +8,7 @@ from diffusers import (
     ControlNetModel, UniPCMultistepScheduler,
     DPMSolverMultistepScheduler
 )
-from controlnet_aux import ZoeDetector
+from controlnet_aux import MidasDetector
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
 from runpod.serverless.modules.rp_logger import RunPodLogger
@@ -38,13 +38,11 @@ def pil_to_b64(img: Image.Image) -> str:
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
 controlnet = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-zoe-depth-sdxl-1.0",
-    torch_dtype=DTYPE
+    "diffusers/controlnet-depth-sdxl-1.0",
+    torch_dtype=DTYPE,
+    use_safetensors=True
 )
-# controlnet = ControlNetModel.from_pretrained(
-#         "diffusers/controlnet-depth-sdxl-1.0-small",
-#         torch_dtype=torch.float16
-#     )
+
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
@@ -76,11 +74,7 @@ PIPELINE.load_ip_adapter(
     weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
 )
 
-zoe_depth = ZoeDetector.from_pretrained(
-    "valhalla/t2iadapter-aux-models",
-    filename="zoed_nk.pth",
-    model_type="zoedepth_nk"
-).to(DEVICE)
+midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
 
 CURRENT_LORA = "None"
 
@@ -106,22 +100,19 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         # control scales
         depth_scale = float(payload.get("depth_conditioning_scale", 0.8))
-        
+
         ip_adapter_scale = float(payload.get("ip_adapter_scale", 0.8))
 
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
-        control_image = zoe_depth(image_pil,
-                                  gamma_corrected=True,
-                                  detect_resolution=512,
-                                  image_resolution=1024)
+        control_image = midas(image_pil)
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=control_image,
+            # image=control_image,
             ip_adapter_image=image_pil,
             control_image=control_image,
             controlnet_conditioning_scale=depth_scale,
