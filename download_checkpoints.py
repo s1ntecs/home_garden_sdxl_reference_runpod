@@ -49,15 +49,15 @@ def get_pipeline():
                                         use_safetensors=True)
     print("LOADED VAE")
     PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
-        # "RunDiffusion/Juggernaut-XL-v9",
-        "SG161222/RealVisXL_V5.0",
+        "RunDiffusion/Juggernaut-XL-v9",
+        # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
         # "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
         torch_dtype=DTYPE,
         add_watermarker=False,
         controlnet=controlnet,
         vae=vae,
-        variant="fp16",
+        # variant="fp16",
         use_safetensors=True,
         resume_download=True,
     )
