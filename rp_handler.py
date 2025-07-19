@@ -69,10 +69,17 @@ PIPELINE.scheduler = DPMSolverMultistepScheduler.from_config(
     solver_order=2,
     lower_order_final=True
 )
+# PIPELINE.image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+#     "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
+#     torch_dtype=torch.float16,
+# ).to(DEVICE)
+
 PIPELINE.image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-    "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
+    "h94/IP-Adapter",
+    subfolder="models/image_encoder",
     torch_dtype=torch.float16,
 ).to(DEVICE)
+
 PIPELINE.enable_xformers_memory_efficient_attention()
 PIPELINE.to(DEVICE)
 
