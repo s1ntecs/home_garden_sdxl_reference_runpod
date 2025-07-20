@@ -134,7 +134,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         # control scales
         depth_scale = float(payload.get("depth_conditioning_scale", 0.8))
         canny_scale = float(payload.get("canny_conditioning_scale", 0.4))
-        
+
         ip_adapter_scale = float(payload.get("ip_adapter_scale", 0.8))
 
         # ---------- препроцессинг входа ------------
@@ -148,7 +148,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=image_pil,
+            image=[depth_image, canny_image],
             ip_adapter_image=reference_pil,
             control_image=[depth_image, canny_image],
             controlnet_conditioning_scale=[depth_scale, canny_scale],
