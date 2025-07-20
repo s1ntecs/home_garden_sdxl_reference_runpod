@@ -1,4 +1,4 @@
-import base64, io, random, time, numpy as np, torch
+import base64, cv2, io, random, time, numpy as np, torch
 from typing import Any, Dict
 from PIL import Image
 
@@ -6,7 +6,7 @@ from transformers import CLIPVisionModelWithProjection
 
 from diffusers import (
     StableDiffusionXLControlNetPipeline,
-    ControlNetModel, UniPCMultistepScheduler,
+    ControlNetModel,
     DPMSolverMultistepScheduler
 )
 
@@ -33,6 +33,15 @@ def url_to_pil(url: str) -> Image.Image:
     return Image.open(info["file_path"]).convert("RGB")
 
 
+def make_canny_condition(image):
+    image = np.array(image)
+    image = cv2.Canny(image, 100, 200)
+    image = image[:, :, None]
+    image = np.concatenate([image, image, image], axis=2)
+    image = Image.fromarray(image)
+    return image
+
+
 def pil_to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -40,18 +49,24 @@ def pil_to_b64(img: Image.Image) -> str:
 
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
-controlnet = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-depth-sdxl-1.0",
-    torch_dtype=DTYPE,
-    use_safetensors=True
-)
+controlnets = [
+    ControlNetModel.from_pretrained(
+        "diffusers/controlnet-depth-sdxl-1.0",
+        torch_dtype=DTYPE,
+        use_safetensors=True
+    ),
+    ControlNetModel.from_pretrained(
+        "diffusers/controlnet-canny-sdxl-1.0",
+        torch_dtype=DTYPE
+    )
+]
 
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
     # "misri/cyberrealisticPony_v90Alt1",
     "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
-    controlnet=controlnet,
+    controlnet=controlnets,
     torch_dtype=DTYPE,
     # variant="fp16" if DTYPE == torch.float16 else None,
     safety_checker=None,
@@ -118,14 +133,16 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         # control scales
         depth_scale = float(payload.get("depth_conditioning_scale", 0.8))
-
+        canny_scale = float(payload.get("canny_conditioning_scale", 0.4))
+        
         ip_adapter_scale = float(payload.get("ip_adapter_scale", 0.8))
 
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)
         reference_pil = url_to_pil(reference_url)
         orig_w, orig_h = image_pil.size
-        control_image = midas(image_pil)
+        depth_image = midas(image_pil)
+        canny_image = make_canny_condition(image_pil)
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
@@ -133,8 +150,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             negative_prompt=negative_prompt,
             image=image_pil,
             ip_adapter_image=reference_pil,
-            control_image=control_image,
-            controlnet_conditioning_scale=depth_scale,
+            control_image=[depth_image, canny_image],
+            controlnet_conditioning_scale=[depth_scale, canny_scale],
             ip_adapter_scale=ip_adapter_scale,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,

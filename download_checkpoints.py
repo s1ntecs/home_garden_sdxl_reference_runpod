@@ -39,11 +39,17 @@ def fetch_checkpoints() -> None:
 
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
-    controlnet = ControlNetModel.from_pretrained(
-        "diffusers/controlnet-depth-sdxl-1.0",
-        torch_dtype=DTYPE,
-        use_safetensors=True
-    )
+    controlnets = [
+        ControlNetModel.from_pretrained(
+            "diffusers/controlnet-depth-sdxl-1.0",
+            torch_dtype=DTYPE,
+            use_safetensors=True
+        ),
+        ControlNetModel.from_pretrained(
+            "diffusers/controlnet-canny-sdxl-1.0",
+            torch_dtype=DTYPE
+        )
+    ]
     print("LOADED CONTROLNET")
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
@@ -56,7 +62,7 @@ def get_pipeline():
         "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
         torch_dtype=torch.float16,
         add_watermarker=False,
-        controlnet=controlnet,
+        controlnet=controlnets,
         vae=vae,
         # variant="fp16",
         use_safetensors=True,
