@@ -5,6 +5,7 @@ from diffusers import (
     ControlNetModel,
     UniPCMultistepScheduler,
     StableDiffusionXLControlNetPipeline,
+    StableDiffusionXLImg2ImgPipeline,
     AutoencoderKL
 )
 
@@ -42,14 +43,24 @@ def fetch_checkpoints() -> None:
 
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
+    # controlnets = [
+    #     ControlNetModel.from_pretrained(
+    #         "diffusers/controlnet-depth-sdxl-1.0",
+    #         torch_dtype=DTYPE,
+    #         use_safetensors=True
+    #     ),
+    #     ControlNetModel.from_pretrained(
+    #         "diffusers/controlnet-canny-sdxl-1.0",
+    #         torch_dtype=DTYPE
+    #     )
+    # ]
     controlnets = [
         ControlNetModel.from_pretrained(
-            "diffusers/controlnet-depth-sdxl-1.0",
+            "SargeZT/sdxl-controlnet-seg",
             torch_dtype=DTYPE,
-            use_safetensors=True
         ),
         ControlNetModel.from_pretrained(
-            "diffusers/controlnet-canny-sdxl-1.0",
+            "diffusers/controlnet-zoe-depth-sdxl-1.0",
             torch_dtype=DTYPE
         )
     ]
@@ -80,11 +91,17 @@ def get_pipeline():
         weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
     )
     print("LOADED IP ADAPTER")
-    # MidasDetector.from_pretrained("lllyasviel/ControlNet")
-    DPTForDepthEstimation.from_pretrained(
-        "Intel/dpt-hybrid-midas")
-    DPTFeatureExtractor.from_pretrained(
-        "Intel/dpt-hybrid-midas")
+    # DPTForDepthEstimation.from_pretrained(
+    #     "Intel/dpt-hybrid-midas")
+    # DPTFeatureExtractor.from_pretrained(
+    #     "Intel/dpt-hybrid-midas")
+    StableDiffusionXLImg2ImgPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-xl-refiner-1.0",
+        torch_dtype=DTYPE,
+        variant="fp16" if DTYPE == torch.float16 else None,
+        safety_checker=None,
+    )
+    MidasDetector.from_pretrained("lllyasviel/ControlNet")
     return
 
 
