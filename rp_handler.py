@@ -109,6 +109,30 @@ midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
 CURRENT_LORA = "None"
 
 
+def multiple_up(x: int, base: int = 64) -> int:
+    """Округление вверх до кратного base."""
+    return ((x + base - 1) // base) * base
+
+
+def pad_image_center(img: Image.Image, target_w: int, target_h: int, fill=(0, 0, 0)):
+    """
+    Центрированный паддинг. Возвращает padded_image и смещения (left, top)
+    для последующего обратного crop.
+    """
+    w, h = img.size
+    if w == target_w and h == target_h:
+        return img, (0, 0)
+    left = (target_w - w) // 2
+    top = (target_h - h) // 2
+    new_im = Image.new("RGB", (target_w, target_h), fill)
+    new_im.paste(img, (left, top))
+    return new_im, (left, top)
+
+
+def crop_back(img: Image.Image, orig_w: int, orig_h: int, left: int, top: int):
+    return img.crop((left, top, left + orig_w, top + orig_h))
+
+
 # ------------------------- ОСНОВНОЙ HANDLER ------------------------------ #
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     try:
@@ -137,26 +161,53 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         ip_adapter_scale = float(payload.get("ip_adapter_scale", 0.8))
 
-        # ---------- препроцессинг входа ------------
+        # # ---------- препроцессинг входа ------------
+        # image_pil = url_to_pil(image_url)
+        # reference_pil = url_to_pil(reference_url)
+        # orig_w, orig_h = image_pil.size
+        # depth_image = midas(image_pil)
+        # canny_image = make_canny_condition(image_pil)
+
+        # ---------- препроцессинг входа (без ресайза, только паддинг) ------------
         image_pil = url_to_pil(image_url)
         reference_pil = url_to_pil(reference_url)
+
         orig_w, orig_h = image_pil.size
-        depth_image = midas(image_pil)
-        canny_image = make_canny_condition(image_pil)
+
+        # Размеры, кратные 64 (или можно 8, но 64 надёжнее при нескольких контролях)
+        pad_w = multiple_up(orig_w, 64)
+        pad_h = multiple_up(orig_h, 64)
+
+        # Генерируем depth/canny на оригинальном размере
+        depth_raw = midas(image_pil)          # PIL (RGB)
+        canny_raw = make_canny_condition(image_pil)
+
+        # Паддим (центрируем) каждую карту
+        # Для depth лучше средний серый фон (128) чтобы не создавать край-контраст
+        depth_padded, (off_x, off_y) = pad_image_center(
+            depth_raw, pad_w, pad_h, fill=(128, 128, 128))
+        canny_padded, _ = pad_image_center(
+            canny_raw, pad_w, pad_h, fill=(0, 0, 0))
+
+        # Если где-то ещё нужен сам image_pil как условие (не в этом коде) — тоже можем паддить
+        # img_padded, _ = pad_image_center(image_pil, pad_w, pad_h, fill=(0, 0, 0))
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=[depth_image, canny_image],
+            image=[depth_padded, canny_padded],
             ip_adapter_image=reference_pil,
-            control_image=[depth_image, canny_image],
+            control_image=[depth_padded, canny_padded],
             controlnet_conditioning_scale=[depth_scale, canny_scale],
             ip_adapter_scale=ip_adapter_scale,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,
         ).images
+        # Обрезаем результат к исходному размеру
+        if pad_w != orig_w or pad_h != orig_h:
+            images = [crop_back(im, orig_w, orig_h, off_x, off_y) for im in images]
 
         return {
             "images_base64": [pil_to_b64(i) for i in images],
