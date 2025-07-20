@@ -11,6 +11,9 @@ from diffusers import (
 from controlnet_aux import MidasDetector
 
 
+from transformers import (DPTFeatureExtractor,
+                          DPTForDepthEstimation)
+
 # from huggingface_hub import hf_hub_download
 
 # ------------------------- каталоги -------------------------
@@ -67,7 +70,7 @@ def get_pipeline():
         # variant="fp16",
         use_safetensors=True,
         resume_download=True,
-    ).to(DEVICE)
+    )
     print("LOADED PIPELINE")
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
@@ -77,7 +80,11 @@ def get_pipeline():
         weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
     )
     print("LOADED IP ADAPTER")
-    MidasDetector.from_pretrained("lllyasviel/ControlNet")
+    # MidasDetector.from_pretrained("lllyasviel/ControlNet")
+    DPTForDepthEstimation.from_pretrained(
+        "Intel/dpt-hybrid-midas")
+    DPTFeatureExtractor.from_pretrained(
+        "Intel/dpt-hybrid-midas")
     return
 
 

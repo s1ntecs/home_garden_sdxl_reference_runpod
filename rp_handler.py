@@ -2,7 +2,9 @@ import base64, cv2, io, random, time, numpy as np, torch
 from typing import Any, Dict
 from PIL import Image
 
-from transformers import CLIPVisionModelWithProjection
+from transformers import (CLIPVisionModelWithProjection,
+                          DPTFeatureExtractor,
+                          DPTForDepthEstimation)
 
 from diffusers import (
     StableDiffusionXLControlNetPipeline,
@@ -10,7 +12,7 @@ from diffusers import (
     DPMSolverMultistepScheduler
 )
 
-from controlnet_aux import MidasDetector
+# from controlnet_aux import MidasDetector
 
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
@@ -25,8 +27,12 @@ TARGET_RES = 1024  # SDXL рекомендует 1024×1024
 
 logger = RunPodLogger()
 
-
+depth_estimator = DPTForDepthEstimation.from_pretrained(
+    "Intel/dpt-hybrid-midas").to(DEVICE)
+feature_extractor = DPTFeatureExtractor.from_pretrained(
+    "Intel/dpt-hybrid-midas")
 # ------------------------- ФУНКЦИИ-ПОМОЩНИКИ ----------------------------- #
+
 
 def url_to_pil(url: str) -> Image.Image:
     info = rp_file(url)
@@ -46,6 +52,28 @@ def pil_to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
+
+
+def get_depth_map(image):
+    image = feature_extractor(images=image,
+                              return_tensors="pt").pixel_values.to("cuda")
+    with torch.no_grad(), torch.autocast("cuda"):
+        depth_map = depth_estimator(image).predicted_depth
+
+    depth_map = torch.nn.functional.interpolate(
+        depth_map.unsqueeze(1),
+        size=(1024, 1024),
+        mode="bicubic",
+        align_corners=False,
+    )
+    depth_min = torch.amin(depth_map, dim=[1, 2, 3], keepdim=True)
+    depth_max = torch.amax(depth_map, dim=[1, 2, 3], keepdim=True)
+    depth_map = (depth_map - depth_min) / (depth_max - depth_min)
+    image = torch.cat([depth_map] * 3, dim=1)
+
+    image = image.permute(0, 2, 3, 1).cpu().numpy()[0]
+    image = Image.fromarray((image * 255.0).clip(0, 255).astype(np.uint8))
+    return image
 
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
@@ -104,7 +132,7 @@ PIPELINE.load_ip_adapter(
     weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
 )
 
-midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
+# midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
 
 CURRENT_LORA = "None"
 
@@ -162,32 +190,11 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         ip_adapter_scale = float(payload.get("ip_adapter_scale", 0.8))
 
         # # ---------- препроцессинг входа ------------
-        # image_pil = url_to_pil(image_url)
-        # reference_pil = url_to_pil(reference_url)
-        # orig_w, orig_h = image_pil.size
-        # depth_image = midas(image_pil)
-        # canny_image = make_canny_condition(image_pil)
-
-        # ---------- препроцессинг входа (без ресайза, только паддинг) ------------
         image_pil = url_to_pil(image_url)
         reference_pil = url_to_pil(reference_url)
-
         orig_w, orig_h = image_pil.size
-
-        # Размеры, кратные 64 (или можно 8, но 64 надёжнее при нескольких контролях)
-        pad_w = multiple_up(orig_w, 64)
-        pad_h = multiple_up(orig_h, 64)
-
-        # Генерируем depth/canny на оригинальном размере
-        depth_raw = midas(image_pil)          # PIL (RGB)
-        canny_raw = make_canny_condition(image_pil)
-
-        # Паддим (центрируем) каждую карту
-        # Для depth лучше средний серый фон (128) чтобы не создавать край-контраст
-        depth_padded, (off_x, off_y) = pad_image_center(
-            depth_raw, pad_w, pad_h, fill=(128, 128, 128))
-        canny_padded, _ = pad_image_center(
-            canny_raw, pad_w, pad_h, fill=(0, 0, 0))
+        depth_image = get_depth_map(image_pil)
+        canny_image = make_canny_condition(image_pil)
 
         # Если где-то ещё нужен сам image_pil как условие (не в этом коде) — тоже можем паддить
         # img_padded, _ = pad_image_center(image_pil, pad_w, pad_h, fill=(0, 0, 0))
@@ -196,9 +203,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=[depth_padded, canny_padded],
+            image=[depth_image, canny_image],
             ip_adapter_image=reference_pil,
-            control_image=[depth_padded, canny_padded],
+            control_image=[depth_image, canny_image],
             controlnet_conditioning_scale=[depth_scale, canny_scale],
             ip_adapter_scale=ip_adapter_scale,
             num_inference_steps=steps,
@@ -206,8 +213,6 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             generator=generator,
         ).images
         # Обрезаем результат к исходному размеру
-        if pad_w != orig_w or pad_h != orig_h:
-            images = [crop_back(im, orig_w, orig_h, off_x, off_y) for im in images]
 
         return {
             "images_base64": [pil_to_b64(i) for i in images],
