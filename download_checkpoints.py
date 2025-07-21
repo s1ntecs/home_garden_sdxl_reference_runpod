@@ -4,7 +4,7 @@ import torch
 from diffusers import (
     ControlNetModel,
     UniPCMultistepScheduler,
-    StableDiffusionXLControlNetPipeline,
+    StableDiffusionXLControlNetImg2ImgPipeline,
     StableDiffusionXLImg2ImgPipeline,
     AutoencoderKL
 )
@@ -54,22 +54,16 @@ def get_pipeline():
     #         torch_dtype=DTYPE
     #     )
     # ]
-    controlnets = [
-        ControlNetModel.from_pretrained(
-            "SargeZT/sdxl-controlnet-seg",
-            torch_dtype=DTYPE,
-        ),
-        ControlNetModel.from_pretrained(
+    controlnets = ControlNetModel.from_pretrained(
             "diffusers/controlnet-zoe-depth-sdxl-1.0",
             torch_dtype=DTYPE
         )
-    ]
     print("LOADED CONTROLNET")
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
     print("LOADED VAE")
-    PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
+    PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
         # "RunDiffusion/Juggernaut-XL-v9",
         # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
@@ -95,12 +89,12 @@ def get_pipeline():
     #     "Intel/dpt-hybrid-midas")
     # DPTFeatureExtractor.from_pretrained(
     #     "Intel/dpt-hybrid-midas")
-    StableDiffusionXLImg2ImgPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-refiner-1.0",
-        torch_dtype=DTYPE,
-        variant="fp16" if DTYPE == torch.float16 else None,
-        safety_checker=None,
-    )
+    # StableDiffusionXLImg2ImgPipeline.from_pretrained(
+    #     "stabilityai/stable-diffusion-xl-refiner-1.0",
+    #     torch_dtype=DTYPE,
+    #     variant="fp16" if DTYPE == torch.float16 else None,
+    #     safety_checker=None,
+    # )
     MidasDetector.from_pretrained("lllyasviel/ControlNet")
     return
 

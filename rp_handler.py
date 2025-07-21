@@ -1,3 +1,4 @@
+import cv2
 import base64, io, random, time, numpy as np, torch
 from typing import Any, Dict
 from PIL import Image
@@ -10,7 +11,7 @@ from diffusers import (
     DPMSolverMultistepScheduler
 )
 
-from controlnet_aux import MidasDetector
+from controlnet_aux import MidasDetector, ZoeDetector
 
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
@@ -41,7 +42,7 @@ def pil_to_b64(img: Image.Image) -> str:
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
 controlnet = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-depth-sdxl-1.0",
+    "diffusers/controlnet-zoe-depth-sdxl-1.0",
     torch_dtype=DTYPE,
     use_safetensors=True
 )
@@ -65,7 +66,7 @@ PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
 PIPELINE.scheduler = DPMSolverMultistepScheduler.from_config(
     PIPELINE.scheduler.config,
     use_karras_sigmas=True,
-    algorithm_type="dpmsolver++",   # важно: именно "dpmsolver++"
+    algorithm_type="sde-dpmsolver++",   # важно: именно "dpmsolver++"
     solver_order=2,
     lower_order_final=True
 )
@@ -89,7 +90,8 @@ PIPELINE.load_ip_adapter(
     weight_name="ip-adapter-plus_sdxl_vit-h.safetensors"
 )
 
-midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
+# midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
+processor_zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators")
 
 CURRENT_LORA = "None"
 
@@ -111,6 +113,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         negative_prompt = payload.get("negative_prompt", "")
         guidance_scale = float(payload.get("guidance_scale", 7.5))
+        strength = float(payload.get("strength", 0.5))
+
         steps = min(int(payload.get("steps", MAX_STEPS)), MAX_STEPS)
 
         seed = int(payload.get("seed", random.randint(0, MAX_SEED)))
@@ -124,8 +128,17 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)
         reference_pil = url_to_pil(reference_url)
-        orig_w, orig_h = image_pil.size
-        control_image = midas(image_pil)
+        controlnet_img = processor_zoe(
+            image_pil, output_type='cv2')
+
+        height, width, _ = controlnet_img.shape
+        ratio = np.sqrt(1024. * 1024. / (width * height))
+        new_width = (int(width * ratio) // 8) * 8
+        new_height = (int(height * ratio) // 8) * 8
+        controlnet_img = cv2.resize(controlnet_img,
+                                    (new_width,
+                                     new_height))
+        controlnet_img = Image.fromarray(controlnet_img)
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
@@ -133,12 +146,15 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             negative_prompt=negative_prompt,
             image=image_pil,
             ip_adapter_image=reference_pil,
-            control_image=control_image,
+            control_image=controlnet_img,
             controlnet_conditioning_scale=depth_scale,
             ip_adapter_scale=ip_adapter_scale,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,
+            height=new_height,
+            width=new_width,
+            strength=strength
         ).images
 
         return {
