@@ -176,3 +176,6 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 # ------------------------- RUN WORKER ------------------------------------ #
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
+
+
+# docker build --tag sintecs/sd_design:migrate_from_rp --build-arg COG_REPO=fofr --build-arg COG_MODEL=style-transfer --build-arg COG_VERSION=f1023890703bc0a5a3a2c21b5e498833be5f6ef6e70e9daf6b9b3a4fd8309cf0 .
